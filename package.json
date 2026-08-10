@@ -1,0 +1,32 @@
+{
+  "name": "PhilNITS FE Viewer",
+  "version": "1.0.0",
+  "description": "Easily view past PhilNITS FE exams.",
+  "main": "index.js",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "typecheck:scripts": "tsc -p tsconfig.scripts.json --noEmit",
+    "lint": "eslint .",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "build:scripts": "tsc -p tsconfig.scripts.json",
+    "generate:questionnaires": "npm run build:scripts && node dist/scripts/generate-questionnaires.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/programmer-alterego/pnits-fe-viewer.git"
+  },
+  "keywords": [],
+  "author": "EG Belleza",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/node": "^26.2.0",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.9.6",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.66.0"
+  }
+}
