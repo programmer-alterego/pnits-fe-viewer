@@ -7,10 +7,28 @@
     <meta name="author" content="EG Belleza" />
     <title>PhilNITS PDF Viewer</title>
     <link rel="icon" href="./assets/images/logo.png" />
-    <link rel="stylesheet" href="./assets/styles/main.css" />
+    <link rel="stylesheet" href="./styles/main.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "pdfjs-dist": "./lib/pdfjs/pdf.mjs"
+        }
+      }
+    </script>
   </head>
 
   <body>
-    <main></main>
+    <main>
+      <section class="pdf-viewer">
+        <div class="pdf-toolbar">
+          <!-- controls later -->
+        </div>
+
+        <div class="pdf-container">
+          <canvas id="pdf-canvas"></canvas>
+        </div>
+      </section>
+    </main>
+    <script type="module" src="./main.js"></script>
   </body>
 </html>

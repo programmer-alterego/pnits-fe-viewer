@@ -1,0 +1,16 @@
+.pdf-viewer {
+  width: 100%;
+}
+
+.pdf-toolbar {
+  min-height: 3rem;
+}
+
+.pdf-container {
+  width: 100%;
+  overflow: auto;
+}
+
+#pdf-canvas {
+  display: block;
+}
