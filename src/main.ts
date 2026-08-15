@@ -56,6 +56,7 @@ function setViewerStatus(
   statusElement: HTMLParagraphElement,
   message: string,
 ): void {
+  statusElement.hidden = false;
   statusElement.textContent = message;
 }
 
@@ -144,10 +145,15 @@ async function zoomOut(
     return;
   }
 
+  const previousScale = scale;
   scale = Math.max(MIN_SCALE, scale - SCALE_STEP);
 
+  if (!(await renderCurrentPage(currentPage, statusElement))) {
+    scale = previousScale;
+    return;
+  }
+
   updateZoomInfo(zoomInfo);
-  await renderCurrentPage(currentPage, statusElement);
 }
 
 async function zoomIn(
@@ -158,10 +164,15 @@ async function zoomIn(
     return;
   }
 
-  scale = Math.min(MAX_SCALE, scale + SCALE_STEP);
+  const previousScale = scale;
+  scale = Math.max(MIN_SCALE, scale + SCALE_STEP);
+
+  if (!(await renderCurrentPage(currentPage, statusElement))) {
+    scale = previousScale;
+    return;
+  }
 
   updateZoomInfo(zoomInfo);
-  await renderCurrentPage(currentPage, statusElement);
 }
 
 async function renderCurrentPage(
@@ -169,12 +180,12 @@ async function renderCurrentPage(
   statusElement: HTMLParagraphElement,
 ): Promise<boolean> {
   try {
-    await renderPage(currentPage);
+    await renderPage(pageNumber);
 
     statusElement.hidden = true;
     return true;
   } catch (error: unknown) {
-    console.error(`Failed to render page ${currentPage}:`, error);
+    console.error(`Failed to render page ${pageNumber}:`, error);
 
     setViewerStatus(statusElement, `Failed to render page ${pageNumber}.`);
     return false;
