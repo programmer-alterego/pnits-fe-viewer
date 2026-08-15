@@ -1,16 +1,63 @@
-.pdf-viewer {
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
   width: 100%;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+.pdf-viewer {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100vh;
 }
 
 .pdf-toolbar {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
   min-height: 3rem;
+  padding: 0.5rem;
+}
+
+.pdf-toolbar button {
+  padding: 0.35rem 0.75rem;
+  cursor: pointer;
+}
+
+.pdf-toolbar button:disabled {
+  cursor: not-allowed;
+}
+
+.pdf-toolbar span {
+  white-space: nowrap;
 }
 
 .pdf-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  flex: 1;
+  min-height: 0;
   width: 100%;
   overflow: auto;
 }
 
 #pdf-canvas {
   display: block;
+}
+
+#viewer-status {
+  margin: 1rem;
+  text-align: center;
 }

@@ -27,6 +27,7 @@ function handleKeyboardNavigation(
   pageInfo: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
+  statusElement: HTMLParagraphElement,
 ): void {
   const target = event.target;
 
@@ -39,16 +40,26 @@ function handleKeyboardNavigation(
   }
 
   if (event.key === 'ArrowLeft') {
-    void goToPreviousPage(pageInfo, previousButton, nextButton);
+    void goToPreviousPage(pageInfo, previousButton, nextButton, statusElement);
   }
 
   if (event.key === 'ArrowRight') {
-    void goToNextPage(pageInfo, previousButton, nextButton);
+    void goToNextPage(pageInfo, previousButton, nextButton, statusElement);
   }
 }
+
 function updateZoomInfo(zoomInfo: HTMLSpanElement): void {
   zoomInfo.textContent = `${Math.round(scale * 100)}%`;
 }
+
+function setViewerStatus(
+  statusElement: HTMLParagraphElement,
+  message: string,
+): void {
+  statusElement.hidden = false;
+  statusElement.textContent = message;
+}
+
 async function renderPage(pageNumber: number): Promise<void> {
   const page = await pdfDocument.getPage(pageNumber);
 
@@ -84,14 +95,21 @@ async function goToPreviousPage(
   pageInfo: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
+  statusElement: HTMLParagraphElement,
 ): Promise<void> {
   if (currentPage <= 1) {
     return;
   }
+  const targetPage = currentPage - 1;
 
-  currentPage -= 1;
+  const rendered = await renderCurrentPage(targetPage, statusElement);
 
-  await renderPage(currentPage);
+  if (!rendered) {
+    return;
+  }
+
+  currentPage = targetPage;
+
   updatePageInfo(pageInfo);
   updateNavigationControls(previousButton, nextButton);
 }
@@ -100,50 +118,93 @@ async function goToNextPage(
   pageInfo: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
+  statusElement: HTMLParagraphElement,
 ): Promise<void> {
   if (currentPage >= pdfDocument.numPages) {
     return;
   }
+  const targetPage = currentPage + 1;
 
-  currentPage += 1;
+  const rendered = await renderCurrentPage(targetPage, statusElement);
 
-  await renderPage(currentPage);
+  if (!rendered) {
+    return;
+  }
+
+  currentPage = targetPage;
+
   updatePageInfo(pageInfo);
   updateNavigationControls(previousButton, nextButton);
 }
-async function zoomOut(zoomInfo: HTMLSpanElement): Promise<void> {
+
+async function zoomOut(
+  zoomInfo: HTMLSpanElement,
+  statusElement: HTMLParagraphElement,
+): Promise<void> {
   if (scale <= MIN_SCALE) {
     return;
   }
 
+  const previousScale = scale;
   scale = Math.max(MIN_SCALE, scale - SCALE_STEP);
 
+  if (!(await renderCurrentPage(currentPage, statusElement))) {
+    scale = previousScale;
+    return;
+  }
+
   updateZoomInfo(zoomInfo);
-  await renderPage(currentPage);
 }
-async function zoomIn(zoomInfo: HTMLSpanElement): Promise<void> {
+
+async function zoomIn(
+  zoomInfo: HTMLSpanElement,
+  statusElement: HTMLParagraphElement,
+): Promise<void> {
   if (scale >= MAX_SCALE) {
     return;
   }
 
-  scale = Math.min(MAX_SCALE, scale + SCALE_STEP);
+  const previousScale = scale;
+  scale = Math.max(MIN_SCALE, scale + SCALE_STEP);
+
+  if (!(await renderCurrentPage(currentPage, statusElement))) {
+    scale = previousScale;
+    return;
+  }
 
   updateZoomInfo(zoomInfo);
-  await renderPage(currentPage);
 }
+
+async function renderCurrentPage(
+  pageNumber: number,
+  statusElement: HTMLParagraphElement,
+): Promise<boolean> {
+  try {
+    await renderPage(pageNumber);
+
+    statusElement.hidden = true;
+    return true;
+  } catch (error: unknown) {
+    console.error(`Failed to render page ${pageNumber}:`, error);
+
+    setViewerStatus(statusElement, `Failed to render page ${pageNumber}.`);
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
+  const statusElement =
+    document.querySelector<HTMLParagraphElement>('#viewer-status');
   const previousButton =
     document.querySelector<HTMLButtonElement>('#previous-page');
-
   const nextButton = document.querySelector<HTMLButtonElement>('#next-page');
-
   const pageInfo = document.querySelector<HTMLSpanElement>('#page-info');
   const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out');
-
   const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in');
-
   const zoomInfo = document.querySelector<HTMLSpanElement>('#zoom-info');
+
   if (
+    !statusElement ||
     !previousButton ||
     !nextButton ||
     !pageInfo ||
@@ -154,43 +215,61 @@ async function main(): Promise<void> {
     throw new Error('PDF viewer controls not found.');
   }
 
-  const pdfUrl = './questionnaires/2026S_AM.pdf';
+  try {
+    // PDF initialization
+    setViewerStatus(statusElement, 'Loading PDF...');
+    const pdfUrl = './questionnaires/2026S_AM.pdf';
 
-  console.log(`Loading ${pdfUrl}...`);
+    console.log(`Loading ${pdfUrl}...`);
 
-  const loadingTask = pdfjsLib.getDocument({
-    url: pdfUrl,
-  });
+    const loadingTask = pdfjsLib.getDocument({
+      url: pdfUrl,
+    });
 
-  pdfDocument = await loadingTask.promise;
+    pdfDocument = await loadingTask.promise;
+    console.log('PDF loaded successfully.');
+    console.log(`Pages: ${pdfDocument.numPages}`);
 
-  console.log('PDF loaded successfully.');
-  console.log(`Pages: ${pdfDocument.numPages}`);
+    previousButton.addEventListener('click', () => {
+      void goToPreviousPage(
+        pageInfo,
+        previousButton,
+        nextButton,
+        statusElement,
+      );
+    });
 
-  previousButton.addEventListener('click', () => {
-    void goToPreviousPage(pageInfo, previousButton, nextButton);
-  });
+    nextButton.addEventListener('click', () => {
+      void goToNextPage(pageInfo, previousButton, nextButton, statusElement);
+    });
 
-  nextButton.addEventListener('click', () => {
-    void goToNextPage(pageInfo, previousButton, nextButton);
-  });
-  document.addEventListener('keydown', (event) => {
-    handleKeyboardNavigation(event, pageInfo, previousButton, nextButton);
-  });
+    document.addEventListener('keydown', (event) => {
+      handleKeyboardNavigation(
+        event,
+        pageInfo,
+        previousButton,
+        nextButton,
+        statusElement,
+      );
+    });
 
-  zoomOutButton.addEventListener('click', () => {
-    void zoomOut(zoomInfo);
-  });
+    zoomOutButton.addEventListener('click', () => {
+      void zoomOut(zoomInfo, statusElement);
+    });
 
-  zoomInButton.addEventListener('click', () => {
-    void zoomIn(zoomInfo);
-  });
-  updatePageInfo(pageInfo);
-  updateNavigationControls(previousButton, nextButton);
-  updateZoomInfo(zoomInfo);
-  await renderPage(currentPage);
+    zoomInButton.addEventListener('click', () => {
+      void zoomIn(zoomInfo, statusElement);
+    });
+
+    updatePageInfo(pageInfo);
+    updateNavigationControls(previousButton, nextButton);
+    updateZoomInfo(zoomInfo);
+    await renderCurrentPage(currentPage, statusElement);
+  } catch (error: unknown) {
+    console.error('Failed to initialize PDF viewer:', error);
+
+    setViewerStatus(statusElement, 'Failed to load the PDF. Please try again.');
+  }
 }
 
-main().catch((error: unknown) => {
-  console.error('Failed to initialize PDF viewer:', error);
-});
+void main();
