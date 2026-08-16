@@ -7,11 +7,22 @@ let currentPage = 1;
 const MIN_SCALE = 0.5;
 const MAX_SCALE = 3;
 const SCALE_STEP = 0.25;
-
+let renderRequestId = 0;
 let scale = 1.5;
 
-function updatePageInfo(pageInfo: HTMLSpanElement): void {
-  pageInfo.textContent = `Page ${currentPage} / ${pdfDocument.numPages}`;
+interface ZoomPoint {
+  x: number;
+  y: number;
+}
+
+function updatePageInfo(
+  pageNumberInput: HTMLInputElement,
+  pageCount: HTMLSpanElement,
+): void {
+  pageNumberInput.value = String(currentPage);
+  pageNumberInput.max = String(pdfDocument.numPages);
+
+  pageCount.textContent = `/ ${pdfDocument.numPages}`;
 }
 
 function updateNavigationControls(
@@ -24,7 +35,8 @@ function updateNavigationControls(
 
 function handleKeyboardNavigation(
   event: KeyboardEvent,
-  pageInfo: HTMLSpanElement,
+  pageNumberInput: HTMLInputElement,
+  pageCount: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
   statusElement: HTMLParagraphElement,
@@ -40,11 +52,23 @@ function handleKeyboardNavigation(
   }
 
   if (event.key === 'ArrowLeft') {
-    void goToPreviousPage(pageInfo, previousButton, nextButton, statusElement);
+    void goToPreviousPage(
+      pageNumberInput,
+      pageCount,
+      previousButton,
+      nextButton,
+      statusElement,
+    );
   }
 
   if (event.key === 'ArrowRight') {
-    void goToNextPage(pageInfo, previousButton, nextButton, statusElement);
+    void goToNextPage(
+      pageNumberInput,
+      pageCount,
+      previousButton,
+      nextButton,
+      statusElement,
+    );
   }
 }
 
@@ -60,9 +84,14 @@ function setViewerStatus(
   statusElement.textContent = message;
 }
 
-async function renderPage(pageNumber: number): Promise<void> {
+async function renderPage(
+  pageNumber: number,
+  requestId: number,
+): Promise<boolean> {
   const page = await pdfDocument.getPage(pageNumber);
-
+  if (requestId !== renderRequestId) {
+    return false;
+  }
   const viewport = page.getViewport({
     scale,
   });
@@ -82,17 +111,27 @@ async function renderPage(pageNumber: number): Promise<void> {
   canvas.width = viewport.width;
   canvas.height = viewport.height;
 
+  if (requestId !== renderRequestId) {
+    return false;
+  }
+
   await page.render({
     canvas,
     canvasContext: context,
     viewport,
   }).promise;
 
+  if (requestId !== renderRequestId) {
+    return false;
+  }
+
   console.log(`Rendered page ${pageNumber}.`);
+  return true;
 }
 
 async function goToPreviousPage(
-  pageInfo: HTMLSpanElement,
+  pageNumberInput: HTMLInputElement,
+  pageCount: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
   statusElement: HTMLParagraphElement,
@@ -110,12 +149,13 @@ async function goToPreviousPage(
 
   currentPage = targetPage;
 
-  updatePageInfo(pageInfo);
+  updatePageInfo(pageNumberInput, pageCount);
   updateNavigationControls(previousButton, nextButton);
 }
 
 async function goToNextPage(
-  pageInfo: HTMLSpanElement,
+  pageNumberInput: HTMLInputElement,
+  pageCount: HTMLSpanElement,
   previousButton: HTMLButtonElement,
   nextButton: HTMLButtonElement,
   statusElement: HTMLParagraphElement,
@@ -133,8 +173,15 @@ async function goToNextPage(
 
   currentPage = targetPage;
 
-  updatePageInfo(pageInfo);
+  updatePageInfo(pageNumberInput, pageCount);
   updateNavigationControls(previousButton, nextButton);
+}
+
+function getViewportCenter(container: HTMLDivElement): ZoomPoint {
+  return {
+    x: container.clientWidth / 2,
+    y: container.clientHeight / 2,
+  };
 }
 
 async function zoomOut(
@@ -145,15 +192,13 @@ async function zoomOut(
     return;
   }
 
-  const previousScale = scale;
-  scale = Math.max(MIN_SCALE, scale - SCALE_STEP);
+  const container = getPdfContainer();
 
-  if (!(await renderCurrentPage(currentPage, statusElement))) {
-    scale = previousScale;
-    return;
-  }
+  const zoomPoint = getViewportCenter(container);
 
-  updateZoomInfo(zoomInfo);
+  const newScale = Math.max(MIN_SCALE, scale - SCALE_STEP);
+
+  await zoomTo(newScale, zoomPoint, zoomInfo, statusElement);
 }
 
 async function zoomIn(
@@ -164,32 +209,105 @@ async function zoomIn(
     return;
   }
 
-  const previousScale = scale;
-  scale = Math.max(MIN_SCALE, scale + SCALE_STEP);
+  const container = getPdfContainer();
 
-  if (!(await renderCurrentPage(currentPage, statusElement))) {
-    scale = previousScale;
-    return;
-  }
+  const zoomPoint = getViewportCenter(container);
+
+  const newScale = Math.min(MAX_SCALE, scale + SCALE_STEP);
+
+  await zoomTo(newScale, zoomPoint, zoomInfo, statusElement);
+}
+
+async function zoomTo(
+  newScale: number,
+  zoomPoint: ZoomPoint,
+  zoomInfo: HTMLSpanElement,
+  statusElement: HTMLParagraphElement,
+): Promise<void> {
+  const container = getPdfContainer();
+
+  const oldScale = scale;
+
+  const documentX = container.scrollLeft + zoomPoint.x;
+
+  const documentY = container.scrollTop + zoomPoint.y;
+
+  const scaleRatio = newScale / oldScale;
+
+  scale = newScale;
 
   updateZoomInfo(zoomInfo);
+
+  await renderCurrentPage(currentPage, statusElement);
+
+  container.scrollLeft = documentX * scaleRatio - zoomPoint.x;
+
+  container.scrollTop = documentY * scaleRatio - zoomPoint.y;
 }
 
 async function renderCurrentPage(
   pageNumber: number,
   statusElement: HTMLParagraphElement,
 ): Promise<boolean> {
+  const requestId = ++renderRequestId;
   try {
-    await renderPage(pageNumber);
+    const rendered = await renderPage(pageNumber, requestId);
+    if (!rendered) {
+      return false;
+    }
 
     statusElement.hidden = true;
     return true;
   } catch (error: unknown) {
+    if (requestId !== renderRequestId) {
+      return false;
+    }
+
     console.error(`Failed to render page ${pageNumber}:`, error);
 
     setViewerStatus(statusElement, `Failed to render page ${pageNumber}.`);
+
     return false;
   }
+}
+
+async function goToPage(
+  pageNumber: number,
+  pageNumberInput: HTMLInputElement,
+  pageCount: HTMLSpanElement,
+  previousButton: HTMLButtonElement,
+  nextButton: HTMLButtonElement,
+  statusElement: HTMLParagraphElement,
+): Promise<void> {
+  if (pageNumber < 1 || pageNumber > pdfDocument.numPages) {
+    return;
+  }
+
+  if (pageNumber === currentPage) {
+    return;
+  }
+
+  const rendered = await renderCurrentPage(pageNumber, statusElement);
+
+  if (!rendered) {
+    updatePageInfo(pageNumberInput, pageCount);
+    return;
+  }
+
+  currentPage = pageNumber;
+
+  updatePageInfo(pageNumberInput, pageCount);
+  updateNavigationControls(previousButton, nextButton);
+}
+
+function getPdfContainer(): HTMLDivElement {
+  const container = document.querySelector<HTMLDivElement>('.pdf-container');
+
+  if (!container) {
+    throw new Error('PDF container not found.');
+  }
+
+  return container;
 }
 
 async function main(): Promise<void> {
@@ -198,7 +316,9 @@ async function main(): Promise<void> {
   const previousButton =
     document.querySelector<HTMLButtonElement>('#previous-page');
   const nextButton = document.querySelector<HTMLButtonElement>('#next-page');
-  const pageInfo = document.querySelector<HTMLSpanElement>('#page-info');
+  const pageNumberInput =
+    document.querySelector<HTMLInputElement>('#page-number');
+  const pageCount = document.querySelector<HTMLSpanElement>('#page-count');
   const zoomOutButton = document.querySelector<HTMLButtonElement>('#zoom-out');
   const zoomInButton = document.querySelector<HTMLButtonElement>('#zoom-in');
   const zoomInfo = document.querySelector<HTMLSpanElement>('#zoom-info');
@@ -207,7 +327,8 @@ async function main(): Promise<void> {
     !statusElement ||
     !previousButton ||
     !nextButton ||
-    !pageInfo ||
+    !pageNumberInput ||
+    !pageCount ||
     !zoomOutButton ||
     !zoomInButton ||
     !zoomInfo
@@ -232,7 +353,8 @@ async function main(): Promise<void> {
 
     previousButton.addEventListener('click', () => {
       void goToPreviousPage(
-        pageInfo,
+        pageNumberInput,
+        pageCount,
         previousButton,
         nextButton,
         statusElement,
@@ -240,13 +362,20 @@ async function main(): Promise<void> {
     });
 
     nextButton.addEventListener('click', () => {
-      void goToNextPage(pageInfo, previousButton, nextButton, statusElement);
+      void goToNextPage(
+        pageNumberInput,
+        pageCount,
+        previousButton,
+        nextButton,
+        statusElement,
+      );
     });
 
     document.addEventListener('keydown', (event) => {
       handleKeyboardNavigation(
         event,
-        pageInfo,
+        pageNumberInput,
+        pageCount,
         previousButton,
         nextButton,
         statusElement,
@@ -261,7 +390,29 @@ async function main(): Promise<void> {
       void zoomIn(zoomInfo, statusElement);
     });
 
-    updatePageInfo(pageInfo);
+    pageNumberInput.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter') {
+        return;
+      }
+
+      const pageNumber = Number(pageNumberInput.value);
+
+      if (!Number.isInteger(pageNumber)) {
+        updatePageInfo(pageNumberInput, pageCount);
+        return;
+      }
+
+      void goToPage(
+        pageNumber,
+        pageNumberInput,
+        pageCount,
+        previousButton,
+        nextButton,
+        statusElement,
+      );
+    });
+
+    updatePageInfo(pageNumberInput, pageCount);
     updateNavigationControls(previousButton, nextButton);
     updateZoomInfo(zoomInfo);
     await renderCurrentPage(currentPage, statusElement);

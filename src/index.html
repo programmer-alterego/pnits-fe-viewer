@@ -23,7 +23,17 @@
         <div class="pdf-toolbar">
           <button id="previous-page" type="button">Previous</button>
 
-          <span id="page-info">Page 1 / 1</span>
+          <label for="page-number">Page</label>
+
+          <input
+            id="page-number"
+            type="number"
+            min="1"
+            value="1"
+            aria-label="Page number"
+          />
+
+          <span id="page-count">/ 1</span>
 
           <button id="next-page" type="button">Next</button>
 
